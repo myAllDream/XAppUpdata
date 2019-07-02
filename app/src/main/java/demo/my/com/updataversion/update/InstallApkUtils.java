@@ -10,15 +10,13 @@ import android.widget.Toast;
 import java.io.File;
 
 public class InstallApkUtils {
+
     public static void installApk(File file, Context context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             boolean hasInstallPerssion = context.getPackageManager().canRequestPackageInstalls();
             if (!hasInstallPerssion) {
                 //8.0没有安装应用权限，应该提示用户打开应用权限
-                Toast.makeText(context, "请先打开安装权限", Toast.LENGTH_SHORT).show();
-                //跳转至“安装未知应用”权限界面，引导用户开启权限，可以在onActivityResult中接收权限的开启结果
-                    /*Intent intent1 = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
-                    context.startActivityForResult(intent, REQUEST_CODE_UNKNOWN_APP);*/
+                startInstallPermissionSettingActivity(context);
                 return;
             }
         }
@@ -34,5 +32,28 @@ public class InstallApkUtils {
         }
         intent.setDataAndType(uri, "application/vnd.android.package-archive");
         context.startActivity(intent);
+    }
+
+    /**
+     * 开启设置安装未知来源应用权限界面
+     *
+     * @param context
+     */
+    public static void startInstallPermissionSettingActivity(Context context) {
+        if (context == null) {
+            return;
+        }
+        Intent intent = new Intent();
+        //获取当前apk包URI，并设置到intent中（这一步设置，可让“未知应用权限设置界面”只显示当前应用的设置项）
+        Uri packageURI = Uri.parse("package:" + context.getPackageName());
+        intent.setData(packageURI);
+        //设置不同版本跳转未知应用的动作
+        if (Build.VERSION.SDK_INT >= 26) {
+            intent.setAction(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+        } else {
+            intent.setAction(android.provider.Settings.ACTION_SECURITY_SETTINGS);
+        }
+        context.startActivity(intent);
+        Toast.makeText(context, "请先打开安装权限", Toast.LENGTH_SHORT).show();
     }
 }

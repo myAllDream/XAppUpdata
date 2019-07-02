@@ -4,6 +4,7 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Handler;
@@ -12,6 +13,7 @@ import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.DialogFragment;
+import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Gravity;
@@ -33,6 +35,8 @@ import demo.my.com.updataversion.R;
 
 public class UpdateDialogFragment extends DialogFragment implements View.OnClickListener {
     public final static int REQUEST_CODE_REQUEST_PERMISSIONS = 111;
+    private final String downApkName = "download.apk";
+    private int oldProgress;//上一秒的进度值，防止进度闪动
     /**
      * 顶部图片
      */
@@ -72,6 +76,7 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
     private String loadContent;
     private boolean isForce;
     private static Context mContext;
+    private static boolean isFirst = true;//防止多次重复打开安装权限
 
     /**
      * 获取更新提示
@@ -151,8 +156,26 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
             isForce = bundle.getBoolean("isForce");
             initListeners();
         }
+
+        /*if (judgeVersionByPath() > UpdateUtils.getVersionCode(mContext)) {
+            //是更新的
+            mBtnUpdate.setText("立即安装");
+        }*/
     }
 
+    @Override
+    public void onResume() {
+        super.onResume();
+        if ("5.13.11-m27".equals(judgeVersionByPath())) {
+            mBtnUpdate.setText("立即安装");
+            mBtnUpdate.setVisibility(View.VISIBLE);
+            mNumberProgressBar.setVisibility(View.GONE);
+        } else {
+            mBtnUpdate.setText("更新");
+            mBtnUpdate.setVisibility(View.VISIBLE);
+            mNumberProgressBar.setVisibility(View.GONE);
+        }
+    }
 
     private void initListeners() {
         mBtnUpdate.setOnClickListener(this);
@@ -183,7 +206,7 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
             WindowManager.LayoutParams lp = window.getAttributes();
             DisplayMetrics displayMetrics = getContext().getResources().getDisplayMetrics();
             lp.height = WindowManager.LayoutParams.WRAP_CONTENT;
-            lp.width = (int) (displayMetrics.widthPixels * 0.7f);
+            lp.width = (int) (displayMetrics.widthPixels * 0.8f);
             window.setAttributes(lp);
         }
         mTvTitle.setText("升级提醒");
@@ -194,16 +217,23 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
     public void onClick(View view) {
         switch (view.getId()) {
             case R.id.btn_update:
-                //权限判断是否有访问外部存储空间权限
-                int flag = ActivityCompat.checkSelfPermission(getActivity(), Manifest.permission.WRITE_EXTERNAL_STORAGE);
-                if (flag != PackageManager.PERMISSION_GRANTED) {
-                    requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_CODE_REQUEST_PERMISSIONS);
+                if ("立即安装".equals(mBtnUpdate.getText().toString().trim())) {
+                    //立即安装
+                    File file = new File(SharedPrefUtils.getInstance().getApkPath());
+                    InstallApkUtils.installApk(file, mContext);
                 } else {
-                    mBtnUpdate.setVisibility(View.GONE);
-                    mNumberProgressBar.setVisibility(View.VISIBLE);
-                    //开始下载最新安装包
-                    downApk();
+                    //权限判断是否有访问外部存储空间权限
+                    int flag = ActivityCompat.checkSelfPermission(getActivity(), Manifest.permission.WRITE_EXTERNAL_STORAGE);
+                    if (flag != PackageManager.PERMISSION_GRANTED) {
+                        requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_CODE_REQUEST_PERMISSIONS);
+                    } else {
+                        mBtnUpdate.setVisibility(View.GONE);
+                        mNumberProgressBar.setVisibility(View.VISIBLE);
+                        //开始下载最新安装包
+                        downApk();
+                    }
                 }
+
                 break;
             case R.id.btn_background_update:
                 //点击后台更新按钮
@@ -222,8 +252,8 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
     }
 
     private void downApk() {
-        String url = "https://imtt.dd.qq.com/16891/7821870FBE83031CD1D50DE848A40777.apk?fsname=com.novem.firstfinancial_2.4.0_44.apk&csr=1bbd";
-        DownLoadHttpUtils.getInstance(mContext).download(url, "test.apk", new OnDownloadListener() {
+        String url = "https://imtt.dd.qq.com/16891/6346B1E3AED16CFE2F05CA570BD4DA81.apk?fsname=com.oupeng.max_5.13.11-m27_46.apk&amp;csr=1bbd";
+        DownLoadHttpUtils.getInstance(mContext).download(url, downApkName, new OnDownloadListener() {
             @Override
             public void onDownloadSuccess(File file) {
                 Message msg = mHandler.obtainMessage();
@@ -256,11 +286,18 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
             switch (msg.what) {
                 case 0:
                     File file = (File) msg.obj;
-                    InstallApkUtils.installApk(file, mContext);
+                    if (isFirst) {
+                        isFirst = false;
+                        InstallApkUtils.installApk(file, mContext);
+                    }
                     break;
                 case 1:
                     int progress = (int) msg.obj;
-                    mNumberProgressBar.setProgress(progress);
+                    //为了防止进度条闪动
+                    if (progress > oldProgress) {
+                        mNumberProgressBar.setProgress(progress);
+                        oldProgress = progress;
+                    }
                     break;
             }
         }
@@ -277,6 +314,27 @@ public class UpdateDialogFragment extends DialogFragment implements View.OnClick
                 //需要权限被拒绝了
                 Toast.makeText(mContext, "请先手动打开读取存储权限,否则无法安装", Toast.LENGTH_SHORT).show();
             }
+        }
+    }
+
+    /**
+     * 根据路径判断安装包版本
+     */
+    public String judgeVersionByPath() {
+        if (!TextUtils.isEmpty(SharedPrefUtils.getInstance().getApkPath())) {
+            PackageManager packageManager = mContext.getPackageManager();
+            PackageInfo packInfo = packageManager.getPackageArchiveInfo(SharedPrefUtils.getInstance().getApkPath(), PackageManager.GET_ACTIVITIES);
+            //int version = packInfo.versionCode;
+            return packInfo.versionName;
+        }
+        return "";
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        if (mHandler != null) {
+            mHandler.removeCallbacksAndMessages(null);
         }
     }
 }

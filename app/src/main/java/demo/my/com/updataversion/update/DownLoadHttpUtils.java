@@ -80,10 +80,12 @@ public class DownLoadHttpUtils {
                     fileOutputStream.flush();
                     if (listener != null) {
                         listener.onDownloadSuccess(file1);
+                        SharedPrefUtils.getInstance().setApkPath(file1.getAbsolutePath());
                     }
                 } catch (Exception e) {
                     if (listener != null) {
                         listener.onDownloadFailed(e);
+                        SharedPrefUtils.getInstance().setApkPath("");
                     }
                 } finally {
                     try {
